@@ -1,0 +1,4 @@
+# Part 1 (blocking) is Rust; Python scripts so far use only the standard library.
+# Rust toolchain: rustc/cargo 1.98.1 (pinned in src/business_candy_crush/rust-toolchain.toml);
+# crate versions are pinned in src/business_candy_crush/Cargo.lock.
+# Python >= 3.8 (stdlib only for Part 1).

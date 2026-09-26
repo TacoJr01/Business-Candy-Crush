@@ -1,0 +1,11 @@
+# Challenge data and generated files (large / not ours to publish)
+/dataset/
+/output/
+/work/
+/utils/
+/README.md
+/Documentation_template.md
+# Build artefacts
+target/
+__pycache__/
+.DS_Store
