@@ -80,4 +80,22 @@ business_candy_crush eval --scored DIR/candidates_scored.tsv --gt GT.tsv --s1 S1
 | India | 0.9479 | 0.8546 | 0.9807 | 44.5 |
 | US | 0.9827 | 0.9409 | 0.9947 | 40.8 |
 
-The *oracle F0.5 ceiling* is the macro F0.5 a perfect matcher would reach on these candidates: singletons count as 1.0. The naive score-threshold matcher reaches F0.5 = 0.689 (tau = 2.28); this is the baseline for Part 2.
+The *oracle F0.5 ceiling* is the macro F0.5 a perfect matcher would reach on these candidates: singletons count as 1.0. The naive score-threshold matcher reaches F0.5 = 0.689 (tau = 2.28); Part 1 is done, this is the baseline for Part 2.
+
+## Matching model design (Part 2)
+
+`src/matching/` (Python 3.11+, LightGBM — MIT licensed, single-digit-MB model). Run via `src/run_part2.sh` after Part 1; every stage caches under `work/part2/`.
+
+For each candidate pair the matcher builds 44 features from the raw source records (`part2/norm.py` mirrors the Rust normalisation incl. Indic transliteration; `part2/store.py` keeps per-record token hashes / house numbers / PINs / strings in disk-cached mmap'd arrays):
+
+- **Blocking scores** (all six from `candidates_scored.tsv`: total, four channel cosines, and the name–address *agreement*).
+- **List context:** rank, list length, score relative to the query's best candidate, how many medium/high-score rivals the query has.
+- **Lexical agreement:** token-set Jaccard + two-way containment for name and address, first-house-number equality, any-number overlap, PIN equality, exact normalised-name/address match, length ratios.
+- **Hub competition (per candidate):** how many S1 lists claim it, its best/mean score overall, and this pair's margin against its strongest *other* claimant — the false-merge killer.
+- **Edit distances** (rapidfuzz Levenshtein on name and address, token-set ratio) above blocking-total 1.4, where the precision frontier lives; the cheap vectorised features cover the tail.
+
+Training (`part2.train_model`) uses a 5-fold split **by S1 entity**: folds 0–2 fit, fold 3 early-stops the tree count (1244), fold 4 (~27k entities, never used for anything else) chooses one global probability threshold by sweeping the exact macro-F0.5 objective, singletons included.
+
+**Result: macro F0.5 = 0.949 on the calibration fold** (US 0.965 / India 0.927, P 0.983 / R 0.898) versus 0.689 for the tuned score threshold on the same entities, against an oracle ceiling of 0.989. The threshold sits on a wide flat maximum (0.62–0.77 all give ≥0.948), so it is not a calibration spike.
+
+Finally `part2.predict_test` scores every test candidate and writes `output/matching_results.tsv`; `part2.prune_outputs --cutoff 0.8` drops the tail of the blocking distribution from **both** output files (val says this costs 0.001 F0.5 while removing ~30% of candidates, and keeps `candidate_pairs.tsv` an honest record of what the model actually scored). Full details in `Documentation_template.md` and `work/part2/train_report.txt`.

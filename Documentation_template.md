@@ -110,22 +110,41 @@ ties resolved toward the stricter threshold.
 
 ## 5. Results & Error Analysis
 
-- **F_0.5 Score (macro):** [TBD from work/part2/train_report.txt — calib fold]
-  (naive blocking-score threshold on the same rows: [TBD])
+- **F_0.5 Score (macro):** **0.9493** on the calibration fold (27,395 val entities never
+  used for fitting or early stopping) — vs **0.6894** for a tuned blocking-score
+  threshold on the same entities, and 0.9891 for the perfect-matcher oracle ceiling on
+  the candidate set. Breakdown: US 0.9647 (P 0.987 / R 0.924), India 0.9265 (P 0.977 /
+  R 0.860); pooled P 0.983, R 0.898 at the chosen threshold tau = 0.73. The threshold
+  sweep has a wide flat maximum (F0.5 ≥ 0.948 across tau ∈ [0.62, 0.77]), so the
+  decision boundary is not a calibration spike.
 - **Common false positives (wrong merges):** namesakes in the same city (same street,
-  different business), and hub entities where one generic name legitimately appears
-  many times; concentrated on candidates whose competition margin is near zero.
-- **Common false negatives (missed answers):** India transliteration variants with
-  address drift (address cosine ~0); records whose true match was already outside the
-  blocking recall ceiling (~3.1% of pairs); long-tail low-score candidates.
+  different business) — concentrated where the candidate's competition margin
+  (`cand_comp`) is near zero — and generic DBA/trade names whose canonicalised token
+  sets collide (e.g. two unrelated "Trading Co." at one landmark address).
+- **Common false negatives (missed matches):** India transliteration pairs whose address
+  drifted too (address channel cosine ≈ 0 and no house-number anchor); records whose
+  true match was already outside the blocking recall ceiling (≈3.1% of pairs never
+  appear as candidates); and long-tail pairs below the 0.8 blocking-total floor that is
+  pruned before scoring (0.09 F0.5 pt).
+- Top model signals by gain: address edit distance, blocking total, address token
+  Jaccard/containment, the name×address agreement score, first-house-number equality and
+  the hub-competition margin — i.e. precision comes from address evidence plus
+  knowing when another S1 entity claims the same candidate more strongly.
 
 ---
 
 ## 6. Conclusion
 
-[TBD after final results — summarise: Rust blocking gives a near-perfect recall ceiling
-at scale; the context-aware GBDT matcher converts that into a large F0.5 gain over the
-score-threshold baseline; everything is reproducible from the zip in two shell scripts.]
+A country-agnostic Rust inverted-index blocker puts a 0.989 oracle-F0.5 ceiling within
+~42 candidates per entity at 1.7M-record scale, and a 44-feature LightGBM matcher —
+combining the blocker's per-channel scores with lexical agreement, list-rank context and
+candidate-competition features — converts that ceiling into a measured 0.949 macro F0.5
+on untouched validation entities, a +26-point lift over a tuned score threshold. The
+decision threshold was optimised for the exact leaderboard metric (macro F0.5,
+singletons included) on a held-out fold; the final candidate file is pruned to a
+blocking-total floor so the audited candidate set is exactly what the model scores
+(smaller = better), at a cost of under 0.1 F0.5 point. No external data, no country
+branching; the pipeline reruns end-to-end from the two shell scripts in ~2 CPU-hours.
 
 ---
 

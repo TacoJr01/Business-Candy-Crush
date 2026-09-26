@@ -55,7 +55,8 @@ def main(argv=None):
         keep = above & (total[mask] >= X_)
         probs2 = np.where(keep, np.float32(1.0), np.float32(0.0))
         f, p, r = scores.f05_at(0.5, probs2, y[mask], s_idx[mask], gt_count, rows=cal_rows)
-        print(f"  cutoff {X_:.1f}: pairs kept {keep.mean():.3f}  F0.5 {f:.4f} (delta {f - base_f:+.4f})")
+        cand_frac = (total[mask] >= X_).mean()
+        print(f"  cutoff {X_:.1f}: candidates kept {cand_frac:.3f}  F0.5 {f:.4f} (delta {f - base_f:+.4f})")
     print(f"done ({time.time()-t0:.0f}s)")
     return 0
 
