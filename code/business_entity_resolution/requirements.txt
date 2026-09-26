@@ -2,3 +2,11 @@
 # Rust toolchain: rustc/cargo 1.98.1 (pinned in src/business_candy_crush/rust-toolchain.toml);
 # crate versions are pinned in src/business_candy_crush/Cargo.lock.
 # Python >= 3.8 (stdlib only for Part 1).
+
+# Part 2 (matching model) — Python >= 3.11, tested on 3.12, CPU-only.
+numpy==2.5.2
+pandas==3.0.5          # exploratory analysis only; the pipeline itself does not import it
+scipy==1.18.0
+lightgbm==4.7.0        # MIT licence, <=8B params trivially (the model is ~MB)
+rapidfuzz==3.14.6
+scikit-learn==1.9.1    # not used by the shipped pipeline; handy for analysis notebooks

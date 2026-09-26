@@ -5,17 +5,26 @@ Pipeline for the ML Challenge 2026 Business Entity Resolution task.
 | Stage | Status | Code |
 | --- | --- | --- |
 | Part 1: blocking / candidate generation | done | `src/business_candy_crush/` (Rust) |
-| Part 2: matching model | todo (a naive score-threshold matcher stands in) | — |
-| Part 3: evaluation + packaging | eval for blocking done | `business_candy_crush eval` |
+| Part 2: matching model | done | `src/matching/` (Python + LightGBM) |
+| Part 3: evaluation + packaging | eval built into both stages | `business_candy_crush eval` + `part2.train_model` |
 
 ## Reproduce
 
-Requirements: Rust 1.98+ (`brew install rust` or rustup), Python 3.8+. About 9 GB RAM peak, no GPU.
+Requirements: Rust 1.98+ (`brew install rust` or rustup), Python 3.11+ with
+`pip install -r requirements.txt`. About 9 GB RAM peak for Part 1, ~6 GB for
+Part 2; no GPU needed.
 The dataset is expected at `student_resource/dataset/` (two levels above this folder).
 
 ```bash
 bash src/run_part1.sh
+bash src/run_part2.sh
 ```
+
+Part 1 builds the blocking index and writes `output/candidate_pairs.tsv` + the
+scored candidate files under `work/`. Part 2 trains the matcher on the labelled
+holdout and overwrites `output/matching_results.tsv` with the model's decisions,
+then runs `utils/validate_submission.py`. Every step caches its artefacts under
+`work/part2/`, so a rerun only redoes what changed (delete a cache dir to force it).
 
 This builds the binary, then:
 
