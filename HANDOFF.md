@@ -29,15 +29,18 @@ the naive baseline on the same rows. Final full-val numbers: see
 `work/part2/train_report.txt` (included in `part2_outputs.zip`) — should be a very
 large lift over 0.689; sanity-check it when you open the report.
 
-Key files (in `part2_outputs.zip`, not on GitHub — sizes):
+Key files — **model + metrics are committed in git** under `results/part2/`;
+the two large TSVs ship as a GitHub **Release** asset (`part2_outputs.zip`, repo →
+Releases → download; they exceed GitHub's 100 MB per-file git limit and must not be
+committed):
 
-| file | what |
-| --- | --- |
-| `output/matching_results.tsv` | **the submission file** (1,732,544 rows, one per test S1) |
-| `output/candidate_pairs.tsv` | blocking candidates as submitted (~950 MB) |
-| `work/part2/model.txt` | the trained LightGBM booster (small; also committed to git) |
-| `work/part2/model_meta.json` | chosen tau, calib F0.5, val tag, baseline numbers |
-| `work/part2/train_report.txt` | full holdout evaluation + threshold sweep |
+| file | where | what |
+| --- | --- | --- |
+| `output/matching_results.tsv` | in `part2_outputs.zip` (release) | **the submission file** (1,732,544 rows, one per test S1) |
+| `output/candidate_pairs.tsv` | in `part2_outputs.zip` (release) | audited candidate set, pruned to blocking total ≥ 0.8 |
+| `results/part2/model.txt` | git | the trained LightGBM booster (33 MB) |
+| `results/part2/model_meta.json` | git | chosen tau (0.73), calib F0.5, baseline numbers |
+| `results/part2/train_report.txt` | git | full holdout evaluation + threshold sweep |
 
 Regenerating any of them takes the dataset + the two shell scripts; the model can be
 retrained from scratch (`run_part2.sh`) because all caches live under `work/` (safe to

@@ -1,0 +1,29 @@
+train on 8157376 pairs, best_iter=1244
+top features (gain):
+  f_lev_addr         1.0
+  sc_total           0.687
+  ajacc              0.387
+  acont_b            0.364
+  agree              0.293
+  acont_a            0.116
+  num_first          0.114
+  cand_comp          0.113
+  ncont_b            0.091
+  rank               0.072
+  ntok_b             0.066
+  alen_ratio         0.062
+  sc_fuzzy           0.051
+  nlen_ratio         0.044
+  njacc              0.043
+== LightGBM (calibration rows, 27395 S1) ==
+tau=0.73  macro F0.5=0.9493  precision=0.9828  recall=0.8984
+    US     (16380 S1): F0.5=0.9647  P=0.9866  R=0.9243
+    India  (11015 S1): F0.5=0.9265  P=0.9769  R=0.8603
+
+== naive blocking-score threshold (same rows): best=0.6894 at tau=2.34 ==
+tau=2.34  macro F0.5=0.6894  precision=0.8603  recall=0.5514
+    US     (16380 S1): F0.5=0.7331  P=0.8617  R=0.6086
+    India  (11015 S1): F0.5=0.6244  P=0.8576  R=0.4672
+
+threshold sweep (tau, macro F0.5):
+  0.02:0.7697  0.07:0.8689  0.12:0.8977  0.17:0.9130  0.22:0.9228  0.27:0.9294  0.32:0.9350  0.37:0.9391  0.42:0.9425  0.47:0.9450  0.52:0.9469  0.57:0.9482  0.62:0.9489  0.67:0.9491  0.72:0.9492  0.77:0.9486  0.82:0.9466  0.87:0.9432  0.92:0.9350  0.97:0.9097
