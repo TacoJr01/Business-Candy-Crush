@@ -64,20 +64,46 @@ def main(argv=None):
     fz = feats.fuzz_features(str(wp / "stores/test_s1"), str(wp / "stores/test_cand"),
                              s_idx, c_idx, A["total"])
 
-    # 4. chunked inference
+    # 4. chunked inference — resumable. test_probs.bin holds per-pair probabilities;
+    # test_probs.prog records how far is flushed to disk so an interrupted run
+    # (OOM / reaped shell) continues instead of restarting.
     model = lgb.Booster(model_file=str(wp / "model.txt"))
     feats.assert_features_match(model)
     sc_all = {k: A[k] for k in ("total", "g0", "g1", "g2", "g3", "rank")}
-    probs = np.lib.format.open_memmap(wp / "test_probs.bin", dtype=np.float16,
-                                      shape=(n_pairs,), mode="w+")
+    pbin = wp / "test_probs.bin"
+    prog_file = wp / "test_probs.prog"
+    prog = 0
+    if pbin.exists() and prog_file.exists():
+        try:
+            prog = int(prog_file.read_text().strip())
+        except ValueError:
+            prog = 0
+        existing = np.lib.format.open_memmap(pbin, mode="r+")
+        if existing.shape[0] != n_pairs:
+            prog = 0
+            probs = np.lib.format.open_memmap(pbin, dtype=np.float16, shape=(n_pairs,), mode="w+")
+        else:
+            probs = existing
+    else:
+        prog_file.unlink(missing_ok=True)
+        probs = np.lib.format.open_memmap(pbin, dtype=np.float16, shape=(n_pairs,), mode="w+")
+    prog = (prog // CHUNK) * CHUNK  # snap down to a chunk boundary we can trust
+    if prog:
+        print(f"  resuming inference at {prog}/{n_pairs}", flush=True)
     Xc = np.empty((min(CHUNK, n_pairs), len(feats.FEATURES)), np.float32)
-    for lo in range(0, n_pairs, CHUNK):
+    lastflush = prog
+    for lo in range(prog, n_pairs, CHUNK):
         hi = min(lo + CHUNK, n_pairs)
         feats.fill_matrix(sst, cst, s_idx, c_idx, sc_all, ctx, fz, Xc[:hi - lo], lo, hi)
         probs[lo:hi] = model.predict(Xc[:hi - lo], num_threads=0).astype(np.float16)
         if lo % (CHUNK * 20) == 0:
             print(f"  inferred {lo}/{n_pairs} ({time.time()-t0:.0f}s)", flush=True)
+        if hi - lastflush >= 5_000_000:  # persist progress so a kill only redoes <=5M pairs
+            probs.flush()
+            prog_file.write_text(str(hi))
+            lastflush = hi
     probs.flush()
+    prog_file.write_text(str(n_pairs))
     above = np.asarray(probs[:] >= tau)
     n_pred = int(above.sum())
     per_row = np.bincount(s_idx[above], minlength=sst.n)
