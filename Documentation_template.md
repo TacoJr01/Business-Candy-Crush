@@ -1,0 +1,161 @@
+# ML Challenge 2026: Business Entity Resolution Solution
+
+**Team Name:** Business Candy Crush  
+**Team Members:** Aditya Debaditya, Saloni, [add names]  
+**Submission Date:** [date]
+
+---
+
+## 1. Executive Summary
+
+A two-stage entity-resolution pipeline built for scale and precision: a from-scratch
+Rust inverted-index blocker over four complementary TF-IDF channels (word, joined-key,
+phonetic-skeleton and address) that reaches a 0.989 oracle F0.5 ceiling at ~42
+candidates/entity on 1.7M test records, followed by a LightGBM matcher over 44
+country-agnostic features (blocking scores, rank/context, lexical agreement, edit
+distances, hub-competition signals) with the decision threshold tuned directly for
+macro F0.5 on a held-out entity split.
+
+---
+
+## 2. Methodology
+
+### 2.1 Problem Analysis
+
+EDA on the training data (2.2M S1, 10.3M S2+S3 records) showed:
+
+- **Name noise:** legal-form abbreviations (Pvt/Ltd/Corp), `&` vs "and", DBA/trade
+  names, word splits/joins ("Beth Chapel" vs "bethchapel.com"), word-order swaps,
+  typos, and heavy Indic-script usage in Indian records — many records store the
+  name in Devanagari/Bengali/Tamil/Telugu/Kannada while its match is Latin-transliterated.
+- **Address noise:** street-type abbreviations, missing PIN codes, landmark references,
+  municipal numbering, component reordering, leading-zero house numbers ("01018" = "1018").
+- **Country:** every sampled true pair stays inside its country, but the test set adds
+  `France`, unseen in training. The pipeline therefore treats `country` as an opaque
+  string (hashed into blocking keys), never a fixed enum — no one-hot, no hard-coded
+  country list.
+- **Hubs:** generic names ("Orthopedic Care") and empty addresses make a naive
+  single-ranking blocking lose true matches; and popular candidate records attract many
+  S1 queries, so false-merge risk concentrates on high-frequency candidates.
+- **Singletons** are 5.6% of val entities and worth a full 1.0 each under macro F0.5.
+
+### 2.2 Solution Strategy
+
+**Approach Type:** Blocking (Part 1, Rust) + learned pairwise classifier (Part 2, LightGBM) with a global F0.5-tuned decision threshold.  
+**Core Innovation:** (a) channel-specific top-k candidate lists (combined score, name–address *agreement*, address-less name ranking, and each score group alone) so generic names can never crowd a true match out of a single ranking; (b) feeding the matcher not just per-pair text features but also *ranking context* (position within the query's candidate list) and *competition features* (how strongly other S1 entities claim the same candidate) — decisive for hub disambiguation under a precision-heavy metric.
+
+---
+
+## 3. Candidate Generation (Blocking)
+
+Rust binary `src/business_candy_crush` (Part 1 code):
+
+- **Normalisation:** Indic→Latin transliteration via one ISCII-derived table (all nine
+  Indian script blocks share the layout), NFKD accent stripping, punctuation folding
+  (dots/apostrophes deleted), web-name stripping (`bethchapel.com` → `bethchapel`),
+  legal-form/street-type/state canonicalisation tables, zero-stripped numbers.
+- **Blocking keys (5 channels, hashed with the opaque country label):** name words;
+  joined-name keys (ordered + sorted); a phonetic consonant-skeleton + 4-char
+  prefix/suffix; address words; address skeletons.
+- **Index:** inverted index over S2+S3 with per-country IDF and per-channel L2
+  normalisation; docs renumbered by (country, city-token) for cache locality;
+  posting lists with df > 100k skipped.
+- **Query:** per S1 record, candidate set = union of top-k lists over: the combined
+  weighted score, the name–address agreement `min(name/2, addr)`, name-score among
+  address-less records, and each score group alone.
+
+- **Candidate pairs generated:** 72M pairs for 1,732,544 test S1 entities (~41.5/S1);
+  9.32M for the 220,441-entity train holdout (~42.3/S1).
+- **How you ensured true matches were not lost:** on the train holdout blocking captures
+  96.9% of true pairs (98.3% US / 94.8% India) and retains *all* matches for 90.6% of
+  entities; oracle macro-F0.5 ceiling on the candidate set is 0.989. The per-group
+  top-k lists exist precisely to stop recall loss on namesakes/no-address records;
+  empty output rows (S1 with zero candidates) are legal and rare.
+
+---
+
+## 4. Matching Model
+
+Part 2 code: `src/matching/part2/` (Python, CPU-only). All features are recomputed
+identically for val and test from the raw source files; no country, currency, or
+region-specific branching is used anywhere.
+
+**Features used (44 total, `part2/feats.py`):**
+- Name features: blocking cosines (word/join/skeleton channels), token-set Jaccard and
+  two-way containment over canonicalised name tokens (u32-hashed), exact normalised-name
+  agreement, normalised length ratio, token counts, rapidfuzz Levenshtein similarity
+  and token-set ratio on transliterated names.
+- Address features: address-group cosine, token Jaccard/containment, house-number
+  (numeric-token) overlap and first-number equality, postal/PIN equality, address length
+  ratio, presence flags, rapidfuzz Levenshtein on addresses.
+- Other: candidate-list context (rank, list length, score relative to the query's best,
+  how many high/medium-score rivals the query has), and candidate competition features
+  (how many S1 lists claim this candidate, its best score overall, mean score, and the
+  margin of this query versus the candidate's strongest other claimant) — these give the
+  model a hub-removal signal. Edit distances are computed above blocking-total 1.4
+  (~25% of pairs), where the precision frontier lives; cheaper vectorised signals cover
+  the tail.
+
+**Model type:** LightGBM binary classifier (MIT licence, ~4 MB trees — far below the
+8B-param limit), 5-fold-by-entity protocol: fit folds train the model, an eval fold
+early-stops tree count, and the final refit + a single global decision threshold are
+chosen to maximise macro F0.5 on the untouched calibration fold (~28k val entities).
+Singletons need no special rule: empty predictions score correctly through the threshold.
+
+**Threshold selection method:** direct macro-F0.5 sweep (per-entity F0.5, averaged over
+all val entities incl. singletons) over tau ∈ [0.02, 0.98] on the calibration fold,
+ties resolved toward the stricter threshold.
+
+---
+
+## 5. Results & Error Analysis
+
+- **F_0.5 Score (macro):** [TBD from work/part2/train_report.txt — calib fold]
+  (naive blocking-score threshold on the same rows: [TBD])
+- **Common false positives (wrong merges):** namesakes in the same city (same street,
+  different business), and hub entities where one generic name legitimately appears
+  many times; concentrated on candidates whose competition margin is near zero.
+- **Common false negatives (missed answers):** India transliteration variants with
+  address drift (address cosine ~0); records whose true match was already outside the
+  blocking recall ceiling (~3.1% of pairs); long-tail low-score candidates.
+
+---
+
+## 6. Conclusion
+
+[TBD after final results — summarise: Rust blocking gives a near-perfect recall ceiling
+at scale; the context-aware GBDT matcher converts that into a large F0.5 gain over the
+score-threshold baseline; everything is reproducible from the zip in two shell scripts.]
+
+---
+
+## Appendix
+
+### A. Code Artefacts
+
+```
+code/business_entity_resolution/
+├── src/business_candy_crush/        # Part 1: Rust blocker (cargo build --release)
+├── src/matching/part2/              # Part 2: python package
+│   ├── norm.py        # country-agnostic normalisation (mirrors the Rust pipeline)
+│   ├── store.py       # per-record arrays: token hashes, numbers, PINs, strings (disk-cached, mmap)
+│   ├── scoresrc.py    # parallel parser for candidates_scored.tsv
+│   ├── feats.py       # 44 vectorised pair features + parallel rapidfuzz
+│   ├── scores.py      # exact macro-F0.5 scorer / threshold sweeps
+│   ├── build_val.py   # val holdout: labels + feature matrix
+│   ├── train_model.py # LightGBM + threshold calibration (writes work/part2/model.txt, train_report.txt)
+│   └── predict_test.py# scores all test candidates, writes output/, runs the validator
+├── src/run_part1.sh
+└── src/run_part2.sh   # build_val -> train_model -> predict_test
+```
+
+Reproduce end-to-end: `bash src/run_part1.sh && bash src/run_part2.sh` from
+`code/business_entity_resolution/`. Outputs land in `output/`.
+
+### B. Additional Results
+
+[Optional: threshold sweep table from train_report.txt]
+
+---
+
+**Note:** Teams can modify sections according to their approach while maintaining clarity and technical depth.
