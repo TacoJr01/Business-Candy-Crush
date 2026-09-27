@@ -2,7 +2,7 @@
 //! ML Challenge 2026 business entity resolution task (Part 1).
 //!
 //!   business_candy_crush block --s1 S1.tsv --s2 S2.tsv --s3 S3.tsv --out-dir DIR
-//!       [--k 15] [--k-both 10] [--k-noaddr 5] [--k-group 5,10,10,15] [--max-df 100000] [--alpha 1,0.5,0.5,1,0.3,0.5]
+//!       [--k 15] [--k-both 10] [--k-noaddr 5] [--k-group 5,10,10,15] [--max-df 100000] [--max-df-trig 20000] [--alpha 1,0.5,0.5,1,0.3,0.5]
 //!       [--tau 1.6] [--val-only] [--limit N] [--jobs N]
 //!   k-group order: name words, joined-name key, fuzzy name, address.
 //!   alpha order: name words, joined-name key, fuzzy name, address, address skeleton, name trigrams.
@@ -67,6 +67,7 @@ fn block(args: &[String]) {
         k_noaddr: arg(args, "--k-noaddr").map_or(5, |x| x.parse().unwrap()),
         k_group: [kg[0], kg[1], kg[2], kg[3]],
         max_df: arg(args, "--max-df").map_or(100_000, |x| x.parse().unwrap()),
+        max_df_trig: arg(args, "--max-df-trig").map_or(20_000, |x| x.parse().unwrap()),
         alpha: [alpha[0], alpha[1], alpha[2], alpha[3], alpha[4], alpha[5]],
     };
     let tau: f32 = arg(args, "--tau").map_or(1.6, |x| x.parse().unwrap());
@@ -89,8 +90,8 @@ fn block(args: &[String]) {
         queries.truncate(n.parse().unwrap());
     }
     eprintln!(
-        "querying {} S1 records (k={}, k_both={}, k_noaddr={}, k_group={:?}, max_df={}, alpha={:?})",
-        queries.len(), p.k, p.k_both, p.k_noaddr, p.k_group, p.max_df, p.alpha
+        "querying {} S1 records (k={}, k_both={}, k_noaddr={}, k_group={:?}, max_df={}, max_df_trig={}, alpha={:?})",
+        queries.len(), p.k, p.k_both, p.k_noaddr, p.k_group, p.max_df, p.max_df_trig, p.alpha
     );
     let tq = Instant::now();
     let results = index.query_all(&queries, &p);

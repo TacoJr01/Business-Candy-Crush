@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import feats, resources, scores, scoresrc, store
+from . import embed, feats, resources, scores, scoresrc, store
 
 
 def main(argv=None):
@@ -56,13 +56,16 @@ def main(argv=None):
     # 2. record stores (cached): S1 side + candidate side, filtered to appearing ids
     keep_s1 = set(map(int, np.unique(A["s1_keys"])))
     keep_cand = set(map(int, np.unique(A["c_keys"])))
-    tag = f"{len(keep_s1)}x{len(keep_cand)}"
+    # _e1 suffix keeps embed-enabled matrices from colliding with base ones
+    # (stores are embedding-independent, so they keep the plain tag).
+    stag = f"{len(keep_s1)}x{len(keep_cand)}"
+    tag = stag + ("_e1" if embed.enabled() else "")
     tr = root / "dataset/train"
     s1p = (tr / "train_source1.tsv").resolve()
     cpaths = [(tr / "train_source2.tsv").resolve(), (tr / "train_source3.tsv").resolve()]
-    sst = store.build([s1p], root / f"work/part2/stores/val_s1_{tag}",
+    sst = store.build([s1p], root / f"work/part2/stores/val_s1_{stag}",
                       keep_by_path={str(s1p): keep_s1}, workers=workers)
-    cst = store.build(cpaths, root / f"work/part2/stores/val_cand_{tag}",
+    cst = store.build(cpaths, root / f"work/part2/stores/val_cand_{stag}",
                       keep_by_path={str(cpaths[0]): keep_cand, str(cpaths[1]): keep_cand},
                       workers=workers)
 
@@ -86,12 +89,13 @@ def main(argv=None):
 
     # 5. features
     ctx = feats.context(s_idx, c_idx, A["total"], sst.n, cst.n)
-    sd = str(root / f"work/part2/stores/val_s1_{tag}")
-    cd = str(root / f"work/part2/stores/val_cand_{tag}")
+    sd = str(root / f"work/part2/stores/val_s1_{stag}")
+    cd = str(root / f"work/part2/stores/val_cand_{stag}")
     fz = feats.fuzz_features(sd, cd, s_idx, c_idx, A["total"], workers=workers)
+    eco = embed.pair_cosine(sd, cd, s_idx, c_idx) if embed.enabled() else None
     feats.build_matrix(sst, cst, s_idx, c_idx,
                        {k: A[k] for k in ("total", "g0", "g1", "g2", "g3", "rank")},
-                       ctx, fz, root / f"work/part2/val_X_{tag}.npy")
+                       ctx, fz, root / f"work/part2/val_X_{tag}.npy", eco=eco)
 
     # 6. metadata — row-aligned arrays are stored in STORE index order (what s_idx uses)
     ctry = scores.countries_of(s1p, A["s1_keys"].tolist())

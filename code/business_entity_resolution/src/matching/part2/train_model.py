@@ -20,7 +20,7 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 
-from . import feats, resources, scores
+from . import embed, feats, resources, scores
 
 
 def fold_of(keys):
@@ -86,7 +86,7 @@ def main(argv=None):
                   bagging_freq=1, lambda_l2=1.0, num_threads=threads, verbose=-1, seed=7,
                   **resources.lgb_device_params(device))
     print(f"device={device} num_threads={threads}", flush=True)
-    dtr = lgb.Dataset(X[fit], label=y[fit], feature_name=feats.FEATURES, free_raw_data=True)
+    dtr = lgb.Dataset(X[fit], label=y[fit], feature_name=feats.active_features(), free_raw_data=True)
     dev = lgb.Dataset(X[ev], label=y[ev], reference=dtr, free_raw_data=True)
     try:
         model = lgb.train(params, dtr, num_boost_round=4000, valid_sets=[dev],
@@ -105,7 +105,7 @@ def main(argv=None):
 
     # refit on fit+eval rows; calibration rows stay untouched
     both = fit | ev
-    dall = lgb.Dataset(X[both], label=y[both], feature_name=feats.FEATURES)
+    dall = lgb.Dataset(X[both], label=y[both], feature_name=feats.active_features())
     final = lgb.train(params, dall, num_boost_round=best_iter)
     final.save_model(str(wp / "model.txt"))
 
@@ -134,8 +134,9 @@ def main(argv=None):
     (wp / "train_report.txt").write_text(report, encoding="utf-8")
     (wp / "model_meta.json").write_text(json.dumps(
         dict(tau=float(tau), f05=float(f05), best_iteration=best_iter,
-             features=feats.FEATURES, val_tag=tag, baseline_tau=float(btau),
-             baseline_f05=float(bf05), device=device, num_threads=threads), indent=2))
+             features=feats.active_features(), val_tag=tag, baseline_tau=float(btau),
+             baseline_f05=float(bf05), device=device, num_threads=threads,
+             embedded=embed.enabled()), indent=2))
     print(f"saved model + report ({time.time()-t0:.0f}s)", flush=True)
     return 0
 

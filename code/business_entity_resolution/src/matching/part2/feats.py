@@ -16,7 +16,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-from . import resources
+from . import embed, resources
 
 FUZZ_MIN = 1.4  # rapidfuzz features are computed only above this blocking total
 
@@ -35,6 +35,22 @@ FEATURES = [
 ]
 
 F32 = np.float32
+
+E_COS = "e_cos"  # semantic cosine from part2.embed (only when PART2_EMBED=1)
+
+
+def active_features():
+    """Feature list for this run: base 44 + e_cos iff embeddings are enabled.
+
+    Read from the environment (not a flag) so every stage — build_val,
+    train_model, predict_test — resolves identically. Enabling changes the
+    model schema, so retraining is required; assert_features_match guards
+    mismatches.
+    """
+    base = list(FEATURES)
+    if embed.enabled():
+        base = base + [E_COS]
+    return base
 
 
 def context(s_idx, c_idx, total, n_s1, n_cand):
@@ -195,35 +211,45 @@ def pair_chunk(sstore, cstore, s_idx, c_idx, sc, ctx):
     return g
 
 
-def fill_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, out, lo, hi):
+def fill_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, out, lo, hi,
+                eco=None, names=None):
     """Compute pairs [lo:hi) into `out`, a view of exactly (hi-lo) feature rows.
 
     `sc` holds the per-pair score arrays (total, g0..g3, rank) in FULL length.
+    `eco` is the optional full-length e_cos array (PART2_EMBED=1).
     """
+    names = names or FEATURES
     sl = slice(lo, hi)
     rows = slice(0, hi - lo)
     g = pair_chunk(sstore, cstore, s_idx[sl], c_idx[sl], {k: v[sl] for k, v in sc.items()}, ctx)
     g["f_lev_name"] = fuzz[0][sl].astype(F32)
     g["f_lev_addr"] = fuzz[1][sl].astype(F32)
     g["f_tokset_name"] = fuzz[2][sl].astype(F32)
-    for j, name in enumerate(FEATURES):
+    if E_COS in names:
+        assert eco is not None, "PART2_EMBED=1 but no e_cos array supplied"
+        g[E_COS] = np.asarray(eco[sl], dtype=F32)
+    for j, name in enumerate(names):
         out[rows, j] = g[name]
 
 
 def assert_features_match(model):
     got = list(model.feature_name())
-    if got and got != FEATURES:
-        raise RuntimeError(f"model features {got} != feats.FEATURES {FEATURES}")
+    want = active_features()
+    if got and got != want:
+        raise RuntimeError(f"model features {got} != active feats {want}")
 
 
-def build_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, path, chunk=250_000):
+def build_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, path, chunk=250_000,
+                 eco=None):
     """Fill an on-disk float32 (n_pairs, n_features) matrix in chunks."""
+    names = active_features()
     n = len(s_idx)
-    out = np.lib.format.open_memmap(path, dtype=F32, shape=(n, len(FEATURES)), mode="w+")
+    out = np.lib.format.open_memmap(path, dtype=F32, shape=(n, len(names)), mode="w+")
     t0 = time.time()
     for lo in range(0, n, chunk):
         hi = min(lo + chunk, n)
-        fill_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, out[lo:hi], lo, hi)
+        fill_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, out[lo:hi], lo, hi,
+                    eco=eco, names=names)
         if lo % (chunk * 10) == 0:
             print(f"  features {lo}/{n} ({time.time()-t0:.0f}s)", flush=True)
     out.flush()

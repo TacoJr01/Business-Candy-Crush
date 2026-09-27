@@ -25,7 +25,7 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 
-from . import feats, resources, scoresrc, store
+from . import embed, feats, resources, scoresrc, store
 
 CHUNK = 250_000
 
@@ -70,7 +70,9 @@ def main(argv=None):
     assert (c_idx >= 0).all()
     ctx = feats.context(s_idx, c_idx, A["total"], sst.n, cst.n)
     fz = feats.fuzz_features(str(wp / "stores/test_s1"), str(wp / "stores/test_cand"),
-                             s_idx, c_idx, A["total"])
+                             s_idx, c_idx, A["total"], workers=workers)
+    eco = embed.pair_cosine(str(wp / "stores/test_s1"), str(wp / "stores/test_cand"),
+                            s_idx, c_idx) if embed.enabled() else None
 
     # 4. chunked inference — resumable. test_probs.bin holds per-pair probabilities;
     # test_probs.prog records how far is flushed to disk so an interrupted run
@@ -95,16 +97,18 @@ def main(argv=None):
     else:
         prog_file.unlink(missing_ok=True)
         probs = np.lib.format.open_memmap(pbin, dtype=np.float16, shape=(n_pairs,), mode="w+")
-    prog = (prog // CHUNK) * CHUNK  # snap down to a chunk boundary we can trust
+    prog = (prog // chunk) * chunk  # snap down to a chunk boundary we can trust
     if prog:
         print(f"  resuming inference at {prog}/{n_pairs}", flush=True)
-    Xc = np.empty((min(CHUNK, n_pairs), len(feats.FEATURES)), np.float32)
+    names = feats.active_features()
+    Xc = np.empty((min(chunk, n_pairs), len(names)), np.float32)
     lastflush = prog
-    for lo in range(prog, n_pairs, CHUNK):
-        hi = min(lo + CHUNK, n_pairs)
-        feats.fill_matrix(sst, cst, s_idx, c_idx, sc_all, ctx, fz, Xc[:hi - lo], lo, hi)
-        probs[lo:hi] = model.predict(Xc[:hi - lo], num_threads=0).astype(np.float16)
-        if lo % (CHUNK * 20) == 0:
+    for lo in range(prog, n_pairs, chunk):
+        hi = min(lo + chunk, n_pairs)
+        feats.fill_matrix(sst, cst, s_idx, c_idx, sc_all, ctx, fz, Xc[:hi - lo], lo, hi,
+                          eco=eco, names=names)
+        probs[lo:hi] = model.predict(Xc[:hi - lo], num_threads=threads).astype(np.float16)
+        if lo % (chunk * 20) == 0:
             print(f"  inferred {lo}/{n_pairs} ({time.time()-t0:.0f}s)", flush=True)
         if hi - lastflush >= 5_000_000:  # persist progress so a kill only redoes <=5M pairs
             probs.flush()
@@ -117,7 +121,7 @@ def main(argv=None):
     per_row = np.bincount(s_idx[above], minlength=sst.n)
     n_empty = int((per_row[s_row] == 0).sum())
     print(f"predicts {n_pred} pairs; {n_empty}/{n_rows} S1 singletons ({time.time()-t0:.0f}s)", flush=True)
-    del s_idx, c_idx, ctx, fz
+    del s_idx, c_idx, ctx, fz, eco
 
     # 5. write matching_results.tsv (+ optional pruned candidate_pairs.tsv)
     src = root / "work/test_candidates_scored.tsv"

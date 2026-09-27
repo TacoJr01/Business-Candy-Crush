@@ -68,6 +68,9 @@ pub struct QueryParams {
     pub k_noaddr: usize,
     pub k_group: [usize; N_GROUPS],
     pub max_df: u32,
+    /// Separate (stricter) df cap for trigram postings: common trigrams
+    /// ("ing", "ara") carry ~zero idf but cost long posting walks.
+    pub max_df_trig: u32,
     pub alpha: [f32; N_CHANNELS],
 }
 
@@ -238,6 +241,8 @@ impl Index {
 
         // Traverse only selective posting lists; if none are selective, fall back to
         // the single rarest known token so no query is left without candidates.
+        // Trigrams use a stricter df cap (max_df_trig): they only discriminate
+        // when rare, and common ones would dominate query time.
         let mut trav: Vec<(u32, f32, usize)> = Vec::with_capacity(terms.len());
         let mut rarest: Option<(u32, u32, f32, usize)> = None;
         for &(tid, ch, w) in &terms {
@@ -245,7 +250,8 @@ impl Index {
             let qw = p.alpha[ch] * w / norm[ch];
             let g = CHANNEL_GROUP[ch];
             let df = self.df[t as usize];
-            if df <= p.max_df {
+            let cap = if ch == crate::normalize::CH_TRIG as usize { p.max_df_trig } else { p.max_df };
+            if df <= cap {
                 trav.push((t, qw, g));
             } else if rarest.map_or(true, |(_, d, _, _)| df < d) {
                 rarest = Some((t, df, qw, g));
