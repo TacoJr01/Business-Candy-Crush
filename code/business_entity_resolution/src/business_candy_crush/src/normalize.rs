@@ -16,12 +16,16 @@ pub const CH_NAME_JOIN: u64 = 1;
 pub const CH_NAME_SKEL: u64 = 2;
 pub const CH_ADDR: u64 = 3;
 pub const CH_ADDR_SKEL: u64 = 4;
-pub const N_CHANNELS: usize = 5;
+/// Character trigrams of core name words: robust to compounds glued without
+/// spaces ("capitalfund" ~ "capital fund"), digit-letter swaps ("6rand" ~
+/// "grand") and multi-typo words where whole-word skeleton/prefix keys drift.
+pub const CH_TRIG: u64 = 5;
+pub const N_CHANNELS: usize = 6;
 
 /// Score groups: each gets its own top-k candidate list (see `Index::query`).
-/// name words | joined-name key | fuzzy name (skeleton, prefix, suffix) | address (+ skeleton)
+/// name words | joined-name key | fuzzy name (skeleton, prefix, suffix, trigrams) | address (+ skeleton)
 pub const N_GROUPS: usize = 4;
-pub const CHANNEL_GROUP: [usize; N_CHANNELS] = [0, 1, 2, 3, 3];
+pub const CHANNEL_GROUP: [usize; N_CHANNELS] = [0, 1, 2, 3, 3, 2];
 
 // ---------------------------------------------------------------------------------------
 // Indic -> Latin transliteration.
@@ -416,6 +420,7 @@ pub fn record_tokens(name: &str, addr: &str, country: &str, out: &mut Vec<u64>) 
 
     let nw = name_words(name);
     let mut core: Vec<&str> = Vec::new();
+    let mut tri: Vec<String> = Vec::new();
     for w in &nw {
         out.push(tok(c, CH_NAME, b'w', w));
         if let Some(s) = skeleton(w) {
@@ -427,6 +432,10 @@ pub fn record_tokens(name: &str, addr: &str, country: &str, out: &mut Vec<u64>) 
             out.push(tok(c, CH_NAME_SKEL, b'x', &w[w.len() - 4..]));
         }
         if !is_legal_or_stop(w) {
+            trigrams(w, &mut tri);
+            for t in &tri {
+                out.push(tok(c, CH_TRIG, b't', t));
+            }
             core.push(w);
         }
     }
@@ -461,6 +470,19 @@ pub fn record_tokens(name: &str, addr: &str, country: &str, out: &mut Vec<u64>) 
     out.truncate(w);
 }
 
+/// Character trigrams (`#`-padded) of one normalized word, e.g. "grand" ->
+/// ["#gr", "gra", "ran", "and", "nd#"]. ASCII alphanumeric words only.
+pub fn trigrams(w: &str, out: &mut Vec<String>) {
+    if w.len() < 4 || !w.is_ascii() || !w.bytes().all(|c| c.is_ascii_alphanumeric()) {
+        return;
+    }
+    let p = format!("#{w}#");
+    let b = p.as_bytes();
+    out.clear();
+    for i in 0..b.len() - 2 {
+        out.push(String::from_utf8_lossy(&b[i..i + 3]).into_owned());
+    }
+}
 /// Stable 64-bit FNV-1a used for the deterministic train/validation split.
 /// Mirror this in Python for Part 2: `val = fnv1a64(id) % 10 == 0`.
 pub fn fnv1a64(s: &str) -> u64 {
@@ -490,6 +512,25 @@ mod tests {
         assert_eq!(skeleton(&normalize("டெக்னாலஜீஸ்")), skeleton("technologies"));
         assert_eq!(normalize("ಇಂಟರ್\u{200c}ನ್ಯಾಷನಲ್").split_whitespace().count(), 1);
         assert_eq!(skeleton(&normalize("ಇಂಟರ್\u{200c}ನ್ಯಾಷನಲ್")), skeleton("international"));
+    }
+
+    #[test]
+    fn trigrams_catch_compounds_and_typos() {
+        let mut a = Vec::new();
+        let mut b = Vec::new();
+        trigrams("infrastructureprivate", &mut a);
+        trigrams("infrastructure", &mut b);
+        // every interior trigram of the short word appears in the compound
+        assert!(b.iter().filter(|t| !t.starts_with('#') && !t.ends_with('#')).all(|t| a.contains(t)));
+        let mut c = Vec::new();
+        let mut d = Vec::new();
+        trigrams("grand", &mut c);
+        trigrams("6rand", &mut d);
+        assert!(c.iter().any(|t| d.contains(t)));
+        // too short / non-alphanumeric words give nothing
+        let mut e = Vec::new();
+        trigrams("co", &mut e);
+        assert!(e.is_empty());
     }
 
     #[test]

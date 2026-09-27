@@ -2,10 +2,10 @@
 //! ML Challenge 2026 business entity resolution task (Part 1).
 //!
 //!   business_candy_crush block --s1 S1.tsv --s2 S2.tsv --s3 S3.tsv --out-dir DIR
-//!       [--k 15] [--k-both 10] [--k-noaddr 5] [--k-group 5,10,10,15] [--max-df 100000] [--alpha 1,0.5,0.5,1,0.3]
+//!       [--k 15] [--k-both 10] [--k-noaddr 5] [--k-group 5,10,10,15] [--max-df 100000] [--alpha 1,0.5,0.5,1,0.3,0.5]
 //!       [--tau 1.6] [--val-only] [--limit N] [--jobs N]
-//!   k-group / alpha order: name words, joined-name key, fuzzy name, address (alpha: + address skeleton)
-//!   --jobs caps rayon threads (default: 80% of logical CPUs; see init_thread_pool).
+//!   k-group order: name words, joined-name key, fuzzy name, address.
+//!   alpha order: name words, joined-name key, fuzzy name, address, address skeleton, name trigrams.
 //!   business_candy_crush eval --scored DIR/candidates_scored.tsv --gt GT.tsv --s1 S1.tsv
 //!       [--misses DIR/misses.tsv]
 
@@ -59,7 +59,7 @@ fn block(args: &[String]) {
     let floats = |name: &str, default: &str| -> Vec<f32> {
         arg(args, name).unwrap_or_else(|| default.into()).split(',').map(|x| x.parse().unwrap()).collect()
     };
-    let alpha = floats("--alpha", "1,0.5,0.5,1,0.3");
+    let alpha = floats("--alpha", "1,0.5,0.5,1,0.3,0.5");
     let kg: Vec<usize> = floats("--k-group", "5,10,10,15").iter().map(|&x| x as usize).collect();
     let p = QueryParams {
         k: arg(args, "--k").map_or(15, |x| x.parse().unwrap()),
@@ -67,7 +67,7 @@ fn block(args: &[String]) {
         k_noaddr: arg(args, "--k-noaddr").map_or(5, |x| x.parse().unwrap()),
         k_group: [kg[0], kg[1], kg[2], kg[3]],
         max_df: arg(args, "--max-df").map_or(100_000, |x| x.parse().unwrap()),
-        alpha: [alpha[0], alpha[1], alpha[2], alpha[3], alpha[4]],
+        alpha: [alpha[0], alpha[1], alpha[2], alpha[3], alpha[4], alpha[5]],
     };
     let tau: f32 = arg(args, "--tau").map_or(1.6, |x| x.parse().unwrap());
     let val_only = args.iter().any(|a| a == "--val-only");

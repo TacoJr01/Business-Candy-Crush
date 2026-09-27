@@ -3,6 +3,13 @@ Usage: python3 inspect_misses.py [N]   (run from student_resource/)"""
 import sys
 from collections import defaultdict
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")  # Windows consoles break on Indic scripts
+except Exception:
+    pass
+import sys
+from collections import defaultdict
+
 n = int(sys.argv[1]) if len(sys.argv) > 1 else 25
 miss = [l.rstrip("\n").split("\t") for l in open("work/val/misses.tsv")][1:][:n]
 need = {x for row in miss for x in row[:2]}

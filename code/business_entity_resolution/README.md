@@ -38,7 +38,7 @@ Timing on an 11-core laptop: index build about 25 s; queries about 520/s at the 
 ```
 business_candy_crush block --s1 S1.tsv --s2 S2.tsv --s3 S3.tsv --out-dir DIR
     [--k 15] [--k-both 10] [--k-noaddr 5] [--k-group 5,10,10,15]
-    [--max-df 100000] [--alpha 1,0.5,0.5,1,0.3] [--tau 2.28] [--val-only] [--limit N]
+    [--max-df 100000] [--alpha 1,0.5,0.5,1,0.3,0.5] [--tau 2.28] [--val-only] [--limit N] [--jobs N]
 business_candy_crush eval --scored DIR/candidates_scored.tsv --gt GT.tsv --s1 S1.tsv [--misses F]
 ```
 
@@ -57,12 +57,16 @@ business_candy_crush eval --scored DIR/candidates_scored.tsv --gt GT.tsv --s1 S1
    - Web names are un-domained ("bethchapel.com" → "bethchapel").
    - Legal forms and street types are canonicalised, and US and Indian state names are mapped to their codes.
    - Leading zeros are stripped from numbers ("01018" → "1018", "05th" → "5th").
-2. **Blocking keys**, in five channels, each hashed together with the record's country label:
+2. **Blocking keys**, in six channels, each hashed together with the record's country label:
    - name words;
    - joined-name keys (in order and word-sorted);
    - a fuzzy name key: consonant skeleton plus 4-character prefix and suffix, robust to typos and transliteration (प्राइवेट → "prbt" = private);
    - address words;
-   - address skeletons.
+   - address skeletons;
+   - name character trigrams (`#`-padded, core words only): robust to compounds glued
+     without spaces ("capitalfund" ~ "capital fund"), digit-letter swaps ("6rand" ~
+     "grand") and multi-typo words where whole-word fuzzy keys drift. Scored into
+     the fuzzy group; alpha weight 0.5 by default.
 
    Because the country string is part of every hash, the index is partitioned per country for any label, including France, which never appears in training. There is no hard-coded country list. None of the 1.04M sampled true pairs crosses countries.
 3. **Index.** An inverted index over S2 and S3 with idf weighting (df computed per country) and L2 normalisation per channel. Documents are renumbered by (country, city-like token) for cache locality.
