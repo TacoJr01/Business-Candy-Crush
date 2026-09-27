@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from . import norm
+from . import resources
 
 _ARRS = ("keys", "ntok1", "ntok2", "tok1", "tok2", "nums", "pins", "hname", "haddr",
          "nlen", "alen", "noff", "aoff")
@@ -171,7 +172,7 @@ def build(source_paths, out_dir, keep_by_path=None, workers=None):
     if not complete:  # half-written assembly; start clean
         for stale in list(out_dir.glob("*.npy")) + list(out_dir.glob("*blob.bin")):
             stale.unlink()
-    nw = workers or max(1, (os.cpu_count() or 4) - 1)
+    nw = resources.resolve_workers(workers)
     si = 0
     for p in source_paths:
         p = Path(p).resolve()

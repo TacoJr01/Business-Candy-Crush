@@ -1,0 +1,28 @@
+name: validate-submission
+
+# Proves the validator wiring on every push/PR using a tiny hand-made fixture.
+# Real outputs (output/*.tsv, dataset/) are far too big for git, so CI checks
+# the 3-row fixture in tests/fixtures/ci/ instead.
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: validator (default mode)
+        run: >-
+          python utils/validate_submission.py
+          --matching tests/fixtures/ci/matching_results.tsv
+          --candidate tests/fixtures/ci/candidate_pairs.tsv
+          --test-dir tests/fixtures/ci
+      - name: validator (--check-ids)
+        run: >-
+          python utils/validate_submission.py
+          --matching tests/fixtures/ci/matching_results.tsv
+          --candidate tests/fixtures/ci/candidate_pairs.tsv
+          --test-dir tests/fixtures/ci
+          --check-ids

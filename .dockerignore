@@ -1,0 +1,8 @@
+.git/
+dataset/
+output/
+work/
+*_submission.zip
+target/
+__pycache__/
+*.pyc

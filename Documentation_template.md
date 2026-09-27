@@ -1,8 +1,8 @@
 # ML Challenge 2026: Business Entity Resolution Solution
 
 **Team Name:** Business Candy Crush  
-**Team Members:** Aditya Debaditya, Saloni, [add names]  
-**Submission Date:** [date]
+**Team Members:** Aditya Sunil, Saloni Palo, Debaditya Malakar  
+**Submission Date:** 2026-09-27
 
 ---
 
@@ -173,7 +173,35 @@ Reproduce end-to-end: `bash src/run_part1.sh && bash src/run_part2.sh` from
 
 ### B. Additional Results
 
-[Optional: threshold sweep table from train_report.txt]
+Threshold sweep on the calibration fold (27,395 S1, from `work/part2/train_report.txt`).
+Wide flat maximum: F0.5 ≥ 0.948 across tau ∈ [0.62, 0.77].
+
+| tau | macro F0.5 |
+| --- | --- |
+| 0.02 | 0.7697 |
+| 0.07 | 0.8689 |
+| 0.12 | 0.8977 |
+| 0.17 | 0.9130 |
+| 0.22 | 0.9228 |
+| 0.27 | 0.9294 |
+| 0.32 | 0.9350 |
+| 0.37 | 0.9391 |
+| 0.42 | 0.9425 |
+| 0.47 | 0.9450 |
+| 0.52 | 0.9469 |
+| 0.57 | 0.9482 |
+| 0.62 | 0.9489 |
+| 0.67 | 0.9491 |
+| 0.72 | 0.9492 |
+| 0.77 | 0.9486 |
+| 0.82 | 0.9466 |
+| 0.87 | 0.9432 |
+| 0.92 | 0.9350 |
+| 0.97 | 0.9097 |
+
+Chosen tau = 0.73 (F0.5 = 0.9493). Prune sweep (drop candidates with blocking
+total < X): X=0.6 keeps 89.9% at −0.0001; X=0.8 keeps 70.5% at −0.0009
+(shipped); X=1.0 keeps 50.8% at −0.0033.
 
 ---
 

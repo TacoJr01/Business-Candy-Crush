@@ -20,7 +20,7 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 
-from . import feats, scores
+from . import feats, resources, scores
 
 
 def fold_of(keys):
@@ -49,7 +49,16 @@ def sweep_subset(probs, y, s_idx, gt_count, rows, taus):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[5]))
+    ap.add_argument("--device", default="auto", choices=("auto", "cpu", "gpu"),
+                    help="auto (default): PART2_DEVICE/USE_GPU env or cpu; "
+                         "gpu is opt-in and runs uncapped, CPU work stays ≤80%%")
+    ap.add_argument("--jobs", type=int, default=None,
+                    help="explicit CPU thread/worker count (clamped to the 80%% cap "
+                         "unless PART2_ALLOW_FULL=1)")
     a = ap.parse_args(argv)
+    resources.apply_thread_env()
+    device = resources.resolve_device(None if a.device == "auto" else a.device)
+    threads = resources.lgb_threads(a.jobs)
     root = Path(a.root)
     wp = root / "work/part2"
     tag = (wp / "val_tag.txt").read_text().strip()
@@ -74,11 +83,23 @@ def main(argv=None):
 
     params = dict(objective="binary", metric="auc", learning_rate=0.05, num_leaves=255,
                   min_data_in_leaf=200, feature_fraction=0.9, bagging_fraction=0.8,
-                  bagging_freq=1, lambda_l2=1.0, num_threads=0, verbose=-1, seed=7)
+                  bagging_freq=1, lambda_l2=1.0, num_threads=threads, verbose=-1, seed=7,
+                  **resources.lgb_device_params(device))
+    print(f"device={device} num_threads={threads}", flush=True)
     dtr = lgb.Dataset(X[fit], label=y[fit], feature_name=feats.FEATURES, free_raw_data=True)
     dev = lgb.Dataset(X[ev], label=y[ev], reference=dtr, free_raw_data=True)
-    model = lgb.train(params, dtr, num_boost_round=4000, valid_sets=[dev],
-                      callbacks=[lgb.early_stopping(100), lgb.log_evaluation(200)])
+    try:
+        model = lgb.train(params, dtr, num_boost_round=4000, valid_sets=[dev],
+                          callbacks=[lgb.early_stopping(100), lgb.log_evaluation(200)])
+    except lgb.basic.LightGBMError as e:
+        if device == "gpu":
+            print(f"GPU training failed ({e}); falling back to CPU.", flush=True)
+            params.update(resources.lgb_device_params("cpu"))
+            device = "cpu"
+            model = lgb.train(params, dtr, num_boost_round=4000, valid_sets=[dev],
+                              callbacks=[lgb.early_stopping(100), lgb.log_evaluation(200)])
+        else:
+            raise
     best_iter = int(model.best_iteration or 4000)
     print(f"best_iteration={best_iter}  ({time.time()-t0:.0f}s)", flush=True)
 
@@ -114,7 +135,7 @@ def main(argv=None):
     (wp / "model_meta.json").write_text(json.dumps(
         dict(tau=float(tau), f05=float(f05), best_iteration=best_iter,
              features=feats.FEATURES, val_tag=tag, baseline_tau=float(btau),
-             baseline_f05=float(bf05)), indent=2))
+             baseline_f05=float(bf05), device=device, num_threads=threads), indent=2))
     print(f"saved model + report ({time.time()-t0:.0f}s)", flush=True)
     return 0
 

@@ -8,6 +8,22 @@ DATA="${DATA:-$ROOT/dataset}"
 # Extra flags for `block`, e.g. BLOCK_ARGS="--max-df 50000" for a faster, slightly lower-recall run.
 BLOCK_ARGS="${BLOCK_ARGS:-}"
 
+# ---- resource budget: stay under ~80% of CPUs (rayon). ----
+# Precedence: JOBS > RAYON_NUM_THREADS > 80% of nproc. GPU N/A for Part 1 (CPU-only Rust).
+if [ -z "${JOBS:-}" ]; then
+  if [ -n "${RAYON_NUM_THREADS:-}" ]; then
+    JOBS="$RAYON_NUM_THREADS"
+  elif command -v nproc >/dev/null 2>&1; then
+    JOBS=$(( $(nproc) * 8 / 10 ))
+  else
+    JOBS=$(python3 -c "import os; print(max(1, int((os.cpu_count() or 4) * 0.8)))")
+  fi
+fi
+[ "${JOBS:-0}" -lt 1 ] && JOBS=1
+export RAYON_NUM_THREADS="$JOBS"
+case " $BLOCK_ARGS " in *" --jobs "*) ;; *) BLOCK_ARGS="$BLOCK_ARGS --jobs $JOBS";; esac
+echo "resource budget: JOBS=$JOBS (cpus capped at 80%)" >&2
+
 cargo build --release --manifest-path "$HERE/business_candy_crush/Cargo.toml"
 BIN="$HERE/business_candy_crush/target/release/business_candy_crush"
 

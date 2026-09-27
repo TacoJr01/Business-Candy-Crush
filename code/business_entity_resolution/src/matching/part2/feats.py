@@ -11,11 +11,12 @@ test pass runs in minutes within a 16 GB budget:
     (those dominate the precision frontier), computed in parallel; others get 0.
 """
 
-import os
 import time
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
+
+from . import resources
 
 FUZZ_MIN = 1.4  # rapidfuzz features are computed only above this blocking total
 
@@ -94,7 +95,9 @@ def fuzz_features(sdir, cdir, s_idx, c_idx, total, workers=None):
     idx = np.flatnonzero(total >= FUZZ_MIN)
     if len(idx) == 0:
         return f1, f2, f3
-    nw = workers or max(1, (os.cpu_count() or 4) - 1)
+    # Capped at ~80% of CPUs by default (see part2.resources); GPU does not
+    # apply here — rapidfuzz is CPU-only.
+    nw = resources.resolve_workers(workers)
     step = -(-len(idx) // nw)
     bounds = [(i * step, min((i + 1) * step, len(idx))) for i in range(nw)]
     bounds = [(a, b) for a, b in bounds if b > a]

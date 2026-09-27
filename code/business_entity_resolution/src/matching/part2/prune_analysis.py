@@ -14,7 +14,7 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 
-from . import scores, train_model
+from . import resources, scores, train_model
 
 
 def main(argv=None):
@@ -35,7 +35,7 @@ def main(argv=None):
     cal_rows = np.flatnonzero(folds == 4)
     mask = folds[s_idx] == 4
     X = np.load(wp / f"val_X_{tag}.npy", mmap_mode="r")
-    probs = model.predict(X[mask])
+    probs = model.predict(X[mask], num_threads=resources.lgb_threads())
     del X
     print(f"{int(mask.sum())} calib pairs; tau={tau:.2f} (model best {meta['f05']:.4f})", flush=True)
 

@@ -50,5 +50,7 @@
   ],
   "val_tag": "220441x4271734",
   "baseline_tau": 2.3400000000000016,
-  "baseline_f05": 0.6893805454670946
+  "baseline_f05": 0.6893805454670946,
+  "device": "cpu",
+  "num_threads": 17
 }

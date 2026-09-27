@@ -24,19 +24,25 @@ from pathlib import Path
 
 import numpy as np
 
-from . import feats, scores, scoresrc, store
+from . import feats, resources, scores, scoresrc, store
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[5]))
     ap.add_argument("--limit", type=int, default=0, help="restrict to first N S1 rows (smoke test)")
+    ap.add_argument("--jobs", type=int, default=None,
+                    help="explicit CPU worker count (clamped to the 80%% cap "
+                         "unless PART2_ALLOW_FULL=1)")
     a = ap.parse_args(argv)
+    resources.apply_thread_env()
+    workers = resources.resolve_workers(a.jobs)
     root = Path(a.root)
     t0 = time.time()
 
     # 1. parse scored candidates (cached)
-    A = scoresrc.parse_scored(root / "work/val/candidates_scored.tsv", root / "work/part2/val_pairs")
+    A = scoresrc.parse_scored(root / "work/val/candidates_scored.tsv", root / "work/part2/val_pairs",
+                              workers=workers)
     if a.limit and a.limit < len(A["s1_keys"]):
         cut = int(A["row_off"][a.limit])
         for k in ("total", "g0", "g1", "g2", "g3", "rank", "c_keys"):
@@ -55,9 +61,10 @@ def main(argv=None):
     s1p = (tr / "train_source1.tsv").resolve()
     cpaths = [(tr / "train_source2.tsv").resolve(), (tr / "train_source3.tsv").resolve()]
     sst = store.build([s1p], root / f"work/part2/stores/val_s1_{tag}",
-                      keep_by_path={str(s1p): keep_s1})
+                      keep_by_path={str(s1p): keep_s1}, workers=workers)
     cst = store.build(cpaths, root / f"work/part2/stores/val_cand_{tag}",
-                      keep_by_path={str(cpaths[0]): keep_cand, str(cpaths[1]): keep_cand})
+                      keep_by_path={str(cpaths[0]): keep_cand, str(cpaths[1]): keep_cand},
+                      workers=workers)
 
     # 3. resolve pair -> row / candidate indices
     s_row = sst.lookup(A["s1_keys"])
@@ -81,7 +88,7 @@ def main(argv=None):
     ctx = feats.context(s_idx, c_idx, A["total"], sst.n, cst.n)
     sd = str(root / f"work/part2/stores/val_s1_{tag}")
     cd = str(root / f"work/part2/stores/val_cand_{tag}")
-    fz = feats.fuzz_features(sd, cd, s_idx, c_idx, A["total"])
+    fz = feats.fuzz_features(sd, cd, s_idx, c_idx, A["total"], workers=workers)
     feats.build_matrix(sst, cst, s_idx, c_idx,
                        {k: A[k] for k in ("total", "g0", "g1", "g2", "g3", "rank")},
                        ctx, fz, root / f"work/part2/val_X_{tag}.npy")

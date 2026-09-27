@@ -2,8 +2,10 @@
 /dataset/
 /output/
 /work/
-/utils/
-/README.md
+/utils/*
+!/utils/validate_submission.py
+# Submission zips (hundreds of MB) ship via the Portal, never via git
+*_submission.zip
 # Filled-in Documentation_template.md IS our submission artefact -> tracked
 # Build artefacts
 target/

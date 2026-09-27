@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from . import resources
+
 
 def parse_range(path, start, end, out_dir, shard_i):
     with open(path, "rb") as f:
@@ -76,7 +78,8 @@ def parse_scored(path, out_dir, workers=None):
     for stale in out_dir.glob("shard_*.npz"):
         stale.unlink()
     size = Path(path).stat().st_size
-    nw = workers or max(1, (os.cpu_count() or 4) - 1)
+    # Capped at ~80% of CPUs by default (see part2.resources).
+    nw = resources.resolve_workers(workers)
     nw = max(1, min(nw, size // 4_000_000 + 1))  # avoid a pile of empty shards on small files
     bounds = [size * i // nw for i in range(nw + 1)]
     with ProcessPoolExecutor(max_workers=nw) as ex:

@@ -1,0 +1,43 @@
+version: 0.2
+
+# AWS CodeBuild — Business Candy Crush entity-resolution pipeline.
+# Guaranteed-green checks (no dataset needed): validator fixture, python
+# compile, Rust check. The full pipeline (`make all`) additionally needs
+# dataset/ + the large-file Release asset next to the checkout (see README
+# layout); in a real project fetch student_resource.zip / part2_outputs.zip
+# from S3 in pre_build (example commented below).
+#
+# Linux builder layout expected at the build root:
+#   code/  dataset/  utils/validate_submission.py  Makefile  ...
+
+env:
+  variables:
+    PYTHONPATH: "code/business_entity_resolution/src/matching"
+
+phases:
+  install:
+    runtime-versions:
+      python: "3.12"
+    commands:
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.98.1
+      - export PATH="$HOME/.cargo/bin:$PATH"
+      - rustc --version && cargo --version
+  pre_build:
+    commands:
+      - pip install -r code/business_entity_resolution/requirements.txt
+      # - aws s3 cp s3://<bucket>/student_resource.zip . && unzip -q -o student_resource.zip
+  build:
+    commands:
+      # Thread budget auto-caps at 80% of vCPUs (Makefile/JOBS + part2.resources).
+      - python utils/validate_submission.py --matching tests/fixtures/ci/matching_results.tsv --candidate tests/fixtures/ci/candidate_pairs.tsv --test-dir tests/fixtures/ci --check-ids
+      - python -m py_compile code/business_entity_resolution/src/matching/part2/*.py code/business_entity_resolution/src/package_submission.py
+      - export PATH="$HOME/.cargo/bin:$PATH" && cargo check --manifest-path code/business_entity_resolution/src/business_candy_crush/Cargo.toml --offline || cargo check --manifest-path code/business_entity_resolution/src/business_candy_crush/Cargo.toml
+      # Full run (needs dataset/ + part2 release asset at the build root):
+      # - make all
+      # - make part3
+
+artifacts:
+  files:
+    - results/**/*
+    - Documentation_template.md
+  discard-paths: false

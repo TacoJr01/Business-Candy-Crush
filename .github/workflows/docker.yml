@@ -1,0 +1,28 @@
+name: docker-build
+
+# Build-only image check (no registry push, no secrets needed).
+on:
+  push:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - buildspec.yml
+      - code/**
+      - Makefile
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - buildspec.yml
+      - code/**
+      - Makefile
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t bcc:ci .
+      - name: Smoke-test image entrypoint
+        run: docker run --rm bcc:ci make help

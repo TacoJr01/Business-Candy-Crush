@@ -25,7 +25,7 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 
-from . import feats, scoresrc, store
+from . import feats, resources, scoresrc, store
 
 CHUNK = 250_000
 
@@ -35,7 +35,14 @@ def main(argv=None):
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[5]))
     ap.add_argument("--tau", type=float, default=None)
     ap.add_argument("--cand-min-total", type=float, default=0.0)
+    ap.add_argument("--jobs", type=int, default=None,
+                    help="explicit CPU worker/thread count (clamped to the 80%% cap "
+                         "unless PART2_ALLOW_FULL=1)")
     a = ap.parse_args(argv)
+    resources.apply_thread_env()
+    workers = resources.resolve_workers(a.jobs)
+    threads = resources.lgb_threads(a.jobs)
+    chunk = resources.resolve_chunk(CHUNK)
     root = Path(a.root)
     wp = root / "work/part2"
     meta = json.loads((wp / "model_meta.json").read_text())
@@ -43,7 +50,8 @@ def main(argv=None):
     t0 = time.time()
 
     # 1. parsed pairs (cached)
-    A = scoresrc.parse_scored(root / "work/test_candidates_scored.tsv", wp / "test_pairs")
+    A = scoresrc.parse_scored(root / "work/test_candidates_scored.tsv", wp / "test_pairs",
+                              workers=workers)
     n_pairs, n_rows = len(A["c_keys"]), len(A["s1_keys"])
     print(f"test: {n_rows} S1 rows, {n_pairs} pairs, tau={tau:.2f}", flush=True)
 
@@ -51,8 +59,8 @@ def main(argv=None):
     te = root / "dataset/test"
     s1p = (te / "test_source1.tsv").resolve()
     cpaths = [(te / "test_source2.tsv").resolve(), (te / "test_source3.tsv").resolve()]
-    sst = store.build([s1p], wp / "stores/test_s1")
-    cst = store.build(cpaths, wp / "stores/test_cand")
+    sst = store.build([s1p], wp / "stores/test_s1", workers=workers)
+    cst = store.build(cpaths, wp / "stores/test_cand", workers=workers)
 
     # 3. indices + context + fuzz
     s_row = sst.lookup(A["s1_keys"]).astype(np.int32)

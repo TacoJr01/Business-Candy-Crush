@@ -3,8 +3,9 @@
 //!
 //!   business_candy_crush block --s1 S1.tsv --s2 S2.tsv --s3 S3.tsv --out-dir DIR
 //!       [--k 15] [--k-both 10] [--k-noaddr 5] [--k-group 5,10,10,15] [--max-df 100000] [--alpha 1,0.5,0.5,1,0.3]
-//!       [--tau 1.6] [--val-only] [--limit N]
+//!       [--tau 1.6] [--val-only] [--limit N] [--jobs N]
 //!   k-group / alpha order: name words, joined-name key, fuzzy name, address (alpha: + address skeleton)
+//!   --jobs caps rayon threads (default: 80% of logical CPUs; see init_thread_pool).
 //!   business_candy_crush eval --scored DIR/candidates_scored.tsv --gt GT.tsv --s1 S1.tsv
 //!       [--misses DIR/misses.tsv]
 
@@ -28,6 +29,27 @@ fn req(args: &[String], name: &str) -> String {
         eprintln!("missing required argument {name}");
         std::process::exit(2)
     })
+}
+
+/// Cap rayon at ~80% of logical CPUs (CPU/RAM restraint). Precedence:
+/// `--jobs N` > `RAYON_NUM_THREADS` > 80% of available parallelism.
+/// An explicit value is honoured as-is (user wish); the default is the cap.
+/// `PART2_ALLOW_FULL=1` lifts the cap for explicit values (never for the default).
+fn init_thread_pool(args: &[String]) {
+    let sys = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let cap = ((sys as f64 * 0.8).floor() as usize).max(1);
+    let allow_full = std::env::var("PART2_ALLOW_FULL").map(|v| v == "1" || v == "true").unwrap_or(false);
+    let want: Option<usize> = arg(args, "--jobs")
+        .and_then(|x| x.parse().ok())
+        .or_else(|| std::env::var("RAYON_NUM_THREADS").ok().and_then(|x| x.parse().ok()));
+    let n = match want {
+        Some(w) if allow_full => w.max(1),
+        Some(w) => w.max(1).min(cap.max(1)),
+        None => cap,
+    };
+    let n = n.min(sys).max(1);
+    let _ = rayon::ThreadPoolBuilder::new().num_threads(n).build_global();
+    eprintln!("threads: using {n}/{sys} (80% cap = {cap})");
 }
 
 fn block(args: &[String]) {
@@ -89,6 +111,7 @@ fn block(args: &[String]) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    init_thread_pool(&args);
     match args.get(1).map(String::as_str) {
         Some("block") => block(&args),
         Some("eval") => eval::run(
