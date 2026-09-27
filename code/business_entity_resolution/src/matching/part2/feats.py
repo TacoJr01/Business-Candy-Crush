@@ -16,7 +16,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 
-from . import embed, resources
+from . import charvec, embed, resources
 
 FUZZ_MIN = 1.4  # rapidfuzz features are computed only above this blocking total
 
@@ -37,12 +37,13 @@ FEATURES = [
 F32 = np.float32
 
 E_COS = "e_cos"  # semantic cosine from part2.embed (only when PART2_EMBED=1)
+C_TFIDF = "c_tfidf"  # char-3gram SVD cosine from part2.charvec (PART2_CHARVEC=1)
 
 
 def active_features():
-    """Feature list for this run: base 44 + e_cos iff embeddings are enabled.
+    """Feature list for this run: base 44 + optional semantic columns.
 
-    Read from the environment (not a flag) so every stage — build_val,
+    Read from the environment (not flags) so every stage — build_val,
     train_model, predict_test — resolves identically. Enabling changes the
     model schema, so retraining is required; assert_features_match guards
     mismatches.
@@ -50,6 +51,8 @@ def active_features():
     base = list(FEATURES)
     if embed.enabled():
         base = base + [E_COS]
+    if charvec.enabled():
+        base = base + [C_TFIDF]
     return base
 
 
@@ -212,22 +215,24 @@ def pair_chunk(sstore, cstore, s_idx, c_idx, sc, ctx):
 
 
 def fill_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, out, lo, hi,
-                eco=None, names=None):
+                extra=None, names=None):
     """Compute pairs [lo:hi) into `out`, a view of exactly (hi-lo) feature rows.
 
     `sc` holds the per-pair score arrays (total, g0..g3, rank) in FULL length.
-    `eco` is the optional full-length e_cos array (PART2_EMBED=1).
+    `extra` maps optional feature names (e_cos, c_tfidf) to full-length arrays.
     """
     names = names or FEATURES
+    extra = extra or {}
     sl = slice(lo, hi)
     rows = slice(0, hi - lo)
     g = pair_chunk(sstore, cstore, s_idx[sl], c_idx[sl], {k: v[sl] for k, v in sc.items()}, ctx)
     g["f_lev_name"] = fuzz[0][sl].astype(F32)
     g["f_lev_addr"] = fuzz[1][sl].astype(F32)
     g["f_tokset_name"] = fuzz[2][sl].astype(F32)
-    if E_COS in names:
-        assert eco is not None, "PART2_EMBED=1 but no e_cos array supplied"
-        g[E_COS] = np.asarray(eco[sl], dtype=F32)
+    for name in names:
+        if name in (E_COS, C_TFIDF):
+            assert name in extra, f"{name} active but not supplied"
+            g[name] = np.asarray(extra[name][sl], dtype=F32)
     for j, name in enumerate(names):
         out[rows, j] = g[name]
 
@@ -240,7 +245,7 @@ def assert_features_match(model):
 
 
 def build_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, path, chunk=250_000,
-                 eco=None):
+                 extra=None):
     """Fill an on-disk float32 (n_pairs, n_features) matrix in chunks."""
     names = active_features()
     n = len(s_idx)
@@ -249,7 +254,7 @@ def build_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, path, chunk=250_00
     for lo in range(0, n, chunk):
         hi = min(lo + chunk, n)
         fill_matrix(sstore, cstore, s_idx, c_idx, sc, ctx, fuzz, out[lo:hi], lo, hi,
-                    eco=eco, names=names)
+                    extra=extra, names=names)
         if lo % (chunk * 10) == 0:
             print(f"  features {lo}/{n} ({time.time()-t0:.0f}s)", flush=True)
     out.flush()

@@ -25,7 +25,7 @@ from pathlib import Path
 import lightgbm as lgb
 import numpy as np
 
-from . import embed, feats, resources, scoresrc, store
+from . import charvec, embed, feats, resources, scoresrc, store
 
 CHUNK = 250_000
 
@@ -73,6 +73,13 @@ def main(argv=None):
                              s_idx, c_idx, A["total"], workers=workers)
     eco = embed.pair_cosine(str(wp / "stores/test_s1"), str(wp / "stores/test_cand"),
                             s_idx, c_idx) if embed.enabled() else None
+    cco = charvec.pair_cosine(str(wp / "stores/test_s1"), str(wp / "stores/test_cand"),
+                              s_idx, c_idx, root) if charvec.enabled() else None
+    extra = {}
+    if eco is not None:
+        extra[feats.E_COS] = eco
+    if cco is not None:
+        extra[feats.C_TFIDF] = cco
 
     # 4. chunked inference — resumable. test_probs.bin holds per-pair probabilities;
     # test_probs.prog records how far is flushed to disk so an interrupted run
@@ -106,7 +113,7 @@ def main(argv=None):
     for lo in range(prog, n_pairs, chunk):
         hi = min(lo + chunk, n_pairs)
         feats.fill_matrix(sst, cst, s_idx, c_idx, sc_all, ctx, fz, Xc[:hi - lo], lo, hi,
-                          eco=eco, names=names)
+                          extra=extra, names=names)
         probs[lo:hi] = model.predict(Xc[:hi - lo], num_threads=threads).astype(np.float16)
         if lo % (chunk * 20) == 0:
             print(f"  inferred {lo}/{n_pairs} ({time.time()-t0:.0f}s)", flush=True)
@@ -121,7 +128,7 @@ def main(argv=None):
     per_row = np.bincount(s_idx[above], minlength=sst.n)
     n_empty = int((per_row[s_row] == 0).sum())
     print(f"predicts {n_pred} pairs; {n_empty}/{n_rows} S1 singletons ({time.time()-t0:.0f}s)", flush=True)
-    del s_idx, c_idx, ctx, fz, eco
+    del s_idx, c_idx, ctx, fz, extra
 
     # 5. write matching_results.tsv (+ optional pruned candidate_pairs.tsv)
     src = root / "work/test_candidates_scored.tsv"

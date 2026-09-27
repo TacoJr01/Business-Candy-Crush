@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import embed, feats, resources, scores, scoresrc, store
+from . import charvec, embed, feats, resources, scores, scoresrc, store
 
 
 def main(argv=None):
@@ -56,10 +56,10 @@ def main(argv=None):
     # 2. record stores (cached): S1 side + candidate side, filtered to appearing ids
     keep_s1 = set(map(int, np.unique(A["s1_keys"])))
     keep_cand = set(map(int, np.unique(A["c_keys"])))
-    # _e1 suffix keeps embed-enabled matrices from colliding with base ones
-    # (stores are embedding-independent, so they keep the plain tag).
+    # _e1/_c1 suffixes keep augmented matrices from colliding with base ones
+    # (stores are augmentation-independent, so they keep the plain tag).
     stag = f"{len(keep_s1)}x{len(keep_cand)}"
-    tag = stag + ("_e1" if embed.enabled() else "")
+    tag = stag + ("_e1" if embed.enabled() else "") + ("_c1" if charvec.enabled() else "")
     tr = root / "dataset/train"
     s1p = (tr / "train_source1.tsv").resolve()
     cpaths = [(tr / "train_source2.tsv").resolve(), (tr / "train_source3.tsv").resolve()]
@@ -92,10 +92,14 @@ def main(argv=None):
     sd = str(root / f"work/part2/stores/val_s1_{stag}")
     cd = str(root / f"work/part2/stores/val_cand_{stag}")
     fz = feats.fuzz_features(sd, cd, s_idx, c_idx, A["total"], workers=workers)
-    eco = embed.pair_cosine(sd, cd, s_idx, c_idx) if embed.enabled() else None
+    extra = {}
+    if embed.enabled():
+        extra[feats.E_COS] = embed.pair_cosine(sd, cd, s_idx, c_idx)
+    if charvec.enabled():
+        extra[feats.C_TFIDF] = charvec.pair_cosine(sd, cd, s_idx, c_idx, root)
     feats.build_matrix(sst, cst, s_idx, c_idx,
                        {k: A[k] for k in ("total", "g0", "g1", "g2", "g3", "rank")},
-                       ctx, fz, root / f"work/part2/val_X_{tag}.npy", eco=eco)
+                       ctx, fz, root / f"work/part2/val_X_{tag}.npy", extra=extra)
 
     # 6. metadata — row-aligned arrays are stored in STORE index order (what s_idx uses)
     ctry = scores.countries_of(s1p, A["s1_keys"].tolist())

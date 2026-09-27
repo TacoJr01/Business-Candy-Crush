@@ -100,6 +100,13 @@ For each candidate pair the matcher builds 44 features from the raw source recor
 
 Training (`part2.train_model`) uses a 5-fold split **by S1 entity**: folds 0–2 fit, fold 3 early-stops the tree count (1244), fold 4 (~27k entities, never used for anything else) chooses one global probability threshold by sweeping the exact macro-F0.5 objective, singletons included.
 
+Optional semantic columns (off by default, change the model schema → retrain):
+`PART2_CHARVEC=1` adds `c_tfidf` — char-3gram TF-IDF+SVD (64-dim, fit once on a
+1M train S2+S3 sample, cached) name cosine for compound/typo/transliteration
+pairs where token features go blind (`part2/charvec.py`). `PART2_EMBED=1` adds
+`e_cos` — multilingual-MiniLM cosine, needs sentence-transformers + CUDA
+(`part2/embed.py`, dormant under the pure-CPU policy).
+
 **Result: macro F0.5 = 0.949 on the calibration fold** (US 0.965 / India 0.927, P 0.983 / R 0.898) versus 0.689 for the tuned score threshold on the same entities, against an oracle ceiling of 0.989. The threshold sits on a wide flat maximum (0.62–0.77 all give ≥0.948), so it is not a calibration spike.
 
 Finally `part2.predict_test` scores every test candidate and writes `output/matching_results.tsv`; `part2.prune_outputs --cutoff 0.8` drops the tail of the blocking distribution from **both** output files (val says this costs 0.001 F0.5 while removing ~30% of candidates, and keeps `candidate_pairs.tsv` an honest record of what the model actually scored). Full details in `Documentation_template.md` and `work/part2/train_report.txt`.
